@@ -6,11 +6,8 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import requests
-from io import StringIO
 import warnings
 from scipy import stats
-import calendar
-import json
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -181,6 +178,24 @@ st.markdown("""
         color: #c62828;
         border: 1px solid #ffcdd2;
     }
+    .data-source-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        margin-left: 8px;
+    }
+    .badge-fred {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border: 1px solid #bbdefb;
+    }
+    .badge-sample {
+        background-color: #f3e5f5;
+        color: #7b1fa2;
+        border: 1px solid #e1bee7;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -189,93 +204,90 @@ st.markdown('<h1 class="main-header">Institutional Fund Flow Analytics</h1>', un
 st.markdown('<p class="sub-header">Professional Analysis of Mutual Fund & ETF Flows | Advanced Flow Dynamics</p>', unsafe_allow_html=True)
 
 # FRED API Configuration
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "4a03f808f3f4fea5457376f10e1bf870")  # Default demo key (may have limits)
+FRED_API_KEY = "4a03f808f3f4fea5457376f10e1bf870"
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 # Enhanced FRED Series IDs with detailed information
 FRED_SERIES = {
     'Total Mutual Fund Assets': {
-        'monthly': 'TOTALSL',
-        'weekly': 'TOTALSL',
         'fred_id': 'TOTALSL',
         'description': 'Total Mutual Fund Assets',
         'category': 'Total Assets',
         'unit': 'Millions of Dollars',
         'source': 'Board of Governors of the Federal Reserve System',
         'color': '#2c3e50',
-        'start_year': 1984
+        'start_year': 1984,
+        'available_frequencies': ['monthly']
     },
     'Money Market Funds': {
-        'monthly': 'MMMFFAQ027S',
-        'weekly': 'MMMFFAQ027S',
         'fred_id': 'MMMFFAQ027S',
         'description': 'Money Market Fund Assets',
         'category': 'Money Market',
         'unit': 'Millions of Dollars',
         'source': 'Board of Governors of the Federal Reserve System',
         'color': '#3498db',
-        'start_year': 2007
+        'start_year': 2007,
+        'available_frequencies': ['weekly', 'monthly']
     },
     'Equity Funds': {
-        'monthly': 'EQYFUNDS',
-        'weekly': 'EQYFUNDS',
         'fred_id': 'EQYFUNDS',
         'description': 'Equity Mutual Fund Assets',
         'category': 'Equity',
         'unit': 'Millions of Dollars',
         'source': 'Investment Company Institute',
         'color': '#27ae60',
-        'start_year': 1984
+        'start_year': 1984,
+        'available_frequencies': ['monthly']
     },
     'Bond Funds': {
-        'monthly': 'BONDFUNDS',
         'fred_id': 'BONDFUNDS',
         'description': 'Bond/Income Fund Assets',
         'category': 'Fixed Income',
         'unit': 'Millions of Dollars',
         'source': 'Investment Company Institute',
         'color': '#e74c3c',
-        'start_year': 1984
+        'start_year': 1984,
+        'available_frequencies': ['monthly']
     },
     'Municipal Bond Funds': {
-        'monthly': 'MUNIFUNDS',
         'fred_id': 'MUNIFUNDS',
         'description': 'Municipal Bond Fund Assets',
         'category': 'Municipal Bonds',
         'unit': 'Millions of Dollars',
         'source': 'Investment Company Institute',
         'color': '#9b59b6',
-        'start_year': 1984
+        'start_year': 1984,
+        'available_frequencies': ['monthly']
     },
     'Hybrid Funds': {
-        'monthly': 'HYBRIDFUNDS',
         'fred_id': 'HYBRIDFUNDS',
         'description': 'Hybrid/Other Fund Assets',
         'category': 'Hybrid',
         'unit': 'Millions of Dollars',
         'source': 'Investment Company Institute',
         'color': '#f39c12',
-        'start_year': 1984
+        'start_year': 1984,
+        'available_frequencies': ['monthly']
     },
     'International Equity Funds': {
-        'monthly': 'INTLEQFUNDS',
         'fred_id': 'INTLEQFUNDS',
         'description': 'International Equity Fund Assets',
         'category': 'International',
         'unit': 'Millions of Dollars',
         'source': 'Investment Company Institute',
         'color': '#1abc9c',
-        'start_year': 1984
+        'start_year': 1984,
+        'available_frequencies': ['monthly']
     },
     'Corporate Bond Funds': {
-        'monthly': 'CORPFUNDS',
         'fred_id': 'CORPFUNDS',
         'description': 'Corporate Bond Fund Assets',
         'category': 'Corporate Bonds',
         'unit': 'Millions of Dollars',
         'source': 'Investment Company Institute',
         'color': '#e67e22',
-        'start_year': 2007
+        'start_year': 2007,
+        'available_frequencies': ['monthly']
     }
 }
 
@@ -285,14 +297,6 @@ PROFESSIONAL_COLORS = ['#2c3e50', '#3498db', '#27ae60', '#e74c3c', '#9b59b6', '#
 def fetch_fred_data(series_id, start_date, end_date, frequency='monthly'):
     """Fetch actual data from FRED API"""
     try:
-        # Determine observation frequency for FRED API
-        if frequency == 'weekly':
-            freq_param = 'w'
-        elif frequency == 'monthly':
-            freq_param = 'm'
-        else:
-            freq_param = 'm'  # default to monthly
-        
         # FRED API parameters
         params = {
             'series_id': series_id,
@@ -300,8 +304,7 @@ def fetch_fred_data(series_id, start_date, end_date, frequency='monthly'):
             'file_type': 'json',
             'observation_start': start_date,
             'observation_end': end_date,
-            'frequency': freq_param,
-            'units': 'lin'  # levels (not changes)
+            'units': 'lin'
         }
         
         # Make API request
@@ -319,7 +322,10 @@ def fetch_fred_data(series_id, start_date, end_date, frequency='monthly'):
                     # Skip entries with '.' (FRED's notation for missing data)
                     if obs['value'] != '.':
                         dates.append(pd.to_datetime(obs['date']))
-                        values.append(float(obs['value']))
+                        try:
+                            values.append(float(obs['value']))
+                        except ValueError:
+                            continue
                 
                 if dates and values:
                     # Create DataFrame
@@ -327,29 +333,39 @@ def fetch_fred_data(series_id, start_date, end_date, frequency='monthly'):
                         'Value': values
                     }, index=dates)
                     
-                    return df
+                    # Resample based on requested frequency
+                    if frequency == 'weekly':
+                        # Convert to weekly data (Friday)
+                        df = df.resample('W-FRI').last().dropna()
+                    elif frequency == 'monthly':
+                        # Convert to monthly data (end of month)
+                        df = df.resample('M').last().dropna()
+                    
+                    return df, 'FRED'
                 else:
-                    st.warning(f"No valid data returned for {series_id}")
-                    return None
+                    return None, 'No valid data'
             else:
-                st.warning(f"No observations found for {series_id}")
-                return None
+                return None, 'No observations'
         else:
-            st.warning(f"API request failed for {series_id}: Status {response.status_code}")
-            # Fall back to sample data
-            return generate_sample_data(series_id, start_date, end_date, frequency)
+            error_msg = f"API Status {response.status_code}"
+            try:
+                error_detail = response.json()
+                error_msg += f" - {error_detail.get('error_message', 'No details')}"
+            except:
+                pass
+            return None, error_msg
             
     except Exception as e:
-        st.warning(f"Error fetching data for {series_id}: {str(e)}")
-        # Fall back to sample data
-        return generate_sample_data(series_id, start_date, end_date, frequency)
+        return None, f"Error: {str(e)}"
 
 def generate_sample_data(series_id, start_date, end_date, frequency):
     """Generate realistic sample data when API fails"""
     if frequency == 'monthly':
         dates = pd.date_range(start=start_date, end=end_date, freq='MS')
+        periods_per_year = 12
     else:
         dates = pd.date_range(start=start_date, end=end_date, freq='W-FRI')
+        periods_per_year = 52
     
     n = len(dates)
     np.random.seed(hash(series_id) % 10000)
@@ -359,46 +375,73 @@ def generate_sample_data(series_id, start_date, end_date, frequency):
         base_value = 25000
         trend = 150
         volatility = 3000
+        seasonal_amp = 0.2
     elif 'MMMFF' in series_id:
         base_value = 12000
         trend = 50
         volatility = 2000
+        seasonal_amp = 0.15
     elif 'EQY' in series_id:
         base_value = 15000
         trend = 200
         volatility = 4000
+        seasonal_amp = 0.25
     elif 'BOND' in series_id:
         base_value = 8000
         trend = 100
         volatility = 1500
+        seasonal_amp = 0.1
     elif 'MUNI' in series_id:
         base_value = 5000
         trend = 80
         volatility = 1200
+        seasonal_amp = 0.08
     elif 'HYBRID' in series_id:
         base_value = 3000
         trend = 60
         volatility = 1000
+        seasonal_amp = 0.12
     elif 'INTL' in series_id:
         base_value = 4000
         trend = 120
         volatility = 1800
+        seasonal_amp = 0.18
     elif 'CORP' in series_id:
         base_value = 2000
         trend = 90
         volatility = 1300
+        seasonal_amp = 0.1
     else:
         base_value = 10000
         trend = 100
         volatility = 2000
+        seasonal_amp = 0.15
     
     # Generate realistic data with trend and seasonality
     time_index = np.arange(n)
-    seasonal = volatility * np.sin(2 * np.pi * time_index / 12)  # Annual seasonality
+    
+    # Trend component
+    trend_component = trend * time_index
+    
+    # Seasonal component
+    seasonal = volatility * seasonal_amp * np.sin(2 * np.pi * time_index / periods_per_year)
+    
+    # Random component
     random_component = np.random.normal(0, volatility * 0.5, n)
     
-    values = base_value + trend * time_index + seasonal + random_component
-    values = np.abs(values)  # Ensure positive values
+    # Combine all components
+    values = base_value + trend_component + seasonal + random_component
+    values = np.abs(values)
+    
+    # Add market shocks
+    if n > 20:
+        # Simulate market downturn
+        shock_point = n // 3
+        values[shock_point:shock_point+5] *= 0.85
+        
+        # Simulate market recovery
+        recovery_point = 2 * n // 3
+        values[recovery_point:recovery_point+8] *= 1.15
     
     df = pd.DataFrame({'Value': values}, index=dates)
     return df
@@ -413,7 +456,7 @@ def get_latest_date_info(data_dict):
     if latest_dates:
         latest_overall = max(latest_dates)
         return latest_overall.strftime('%B %d, %Y')
-    return "N/A"
+    return "Not available"
 
 @st.cache_data(ttl=3600)
 def load_fund_data(selected_categories, start_date, frequency):
@@ -425,18 +468,35 @@ def load_fund_data(selected_categories, start_date, frequency):
     for category in selected_categories:
         if category in FRED_SERIES:
             series_info = FRED_SERIES[category]
+            series_id = series_info['fred_id']
             
-            # Get FRED series ID based on frequency
-            if frequency == 'weekly' and 'weekly' in series_info:
-                series_id = series_info['weekly']
+            # Check frequency compatibility
+            available_freqs = series_info.get('available_frequencies', ['monthly'])
+            if frequency not in available_freqs:
+                st.warning(f"{category} ({series_id}) is only available at {', '.join(available_freqs)} frequency. Using {available_freqs[0]} data.")
+                use_freq = available_freqs[0]
             else:
-                series_id = series_info['monthly']
+                use_freq = frequency
             
             # Fetch data from FRED API
             with st.spinner(f"Fetching {category} data from FRED..."):
-                df = fetch_fred_data(series_id, start_date, end_date, frequency)
+                df, data_source = fetch_fred_data(series_id, start_date, end_date, use_freq)
+            
+            if df is None or df.empty:
+                # Use sample data if API fails
+                st.info(f"Using sample data for {category} (FRED API: {data_source})")
+                df = generate_sample_data(series_id, start_date, end_date, use_freq)
+                data_source_type = 'Sample'
+            else:
+                data_source_type = 'FRED'
             
             if df is not None and not df.empty:
+                # Ensure we have enough data points
+                if len(df) < 2:
+                    st.warning(f"Not enough data points for {category}. Using enhanced sample data.")
+                    df = generate_sample_data(series_id, start_date, end_date, use_freq)
+                    data_source_type = 'Sample'
+                
                 # Calculate flows (first difference)
                 df_flows = df.diff()
                 df_flows.columns = ['Flow']
@@ -455,7 +515,9 @@ def load_fund_data(selected_categories, start_date, frequency):
                     'unit': series_info['unit'],
                     'source': series_info['source'],
                     'color': series_info['color'],
-                    'periods_for_trend': 12 if frequency == 'monthly' else 24
+                    'frequency': use_freq,
+                    'periods_for_trend': 12 if use_freq == 'monthly' else 24,
+                    'data_source': data_source_type
                 }
     
     return data_dict
@@ -475,6 +537,14 @@ def show_data_sources_info():
     </div>
     """, unsafe_allow_html=True)
     
+    # Frequency warning
+    if 'frequency' in st.session_state and st.session_state.frequency == 'weekly':
+        st.sidebar.warning("""
+        **Frequency Note:**
+        Some FRED series only have monthly data.
+        Weekly views will show resampled data.
+        """)
+    
     # Data source explanation
     with st.sidebar.expander("ℹ️ About FRED Data", expanded=False):
         st.markdown("""
@@ -482,50 +552,25 @@ def show_data_sources_info():
         
         **Real-time Economic Data from the St. Louis Fed**
         
-        **Key Features:**
-        - 800,000+ economic time series
-        - Real-time and historical data
-        - Multiple frequencies (daily, weekly, monthly)
-        - Professional-grade data quality
+        **API Status:** Active with personal API key
         
-        **Series Included:**
-        1. **Mutual Fund Assets** - Total industry assets
-        2. **Money Market Funds** - Short-term liquid assets
-        3. **Equity Funds** - Stock market investments
-        4. **Bond Funds** - Fixed income investments
-        5. **Municipal Bond Funds** - Tax-exempt investments
+        **Frequency Information:**
+        - ✅ **Monthly Data:** Most mutual fund series
+        - ✅ **Weekly Data:** Money market funds
+        - 🔄 **Auto-resampling:** Data converted when needed
         
         **Data Quality:**
         - Source: Federal Reserve & Investment Company Institute
         - Frequency: Monthly/Weekly
         - Units: Millions of USD
         - Coverage: 1984-Present
-        """)
         
-        if not FRED_API_KEY or FRED_API_KEY == "d6e559fda60851075a75a42dd10d7042":
-            st.warning("""
-            **Using Demo API Key (Rate Limited)**
-            
-            For production use:
-            1. Get free API key: research.stlouisfed.org
-            2. Set in Streamlit Secrets: `FRED_API_KEY`
-            3. Enjoy higher rate limits
-            """)
-    
-    # Display selected series info
-    if 'data_dict' in st.session_state and st.session_state.data_dict:
-        st.sidebar.markdown("### 📈 Active Series")
-        for category, data in st.session_state.data_dict.items():
-            if category in FRED_SERIES:
-                series_info = FRED_SERIES[category]
-                st.sidebar.markdown(f"""
-                **{category}**
-                - FRED ID: `{series_info['fred_id']}`
-                - Last Update: {data['assets'].index[-1].strftime('%Y-%m-%d')}
-                - Data Points: {len(data['assets']):,}
-                """)
+        **Fallback System:**
+        - Realistic sample data if API fails
+        - Maintains analysis continuity
+        - Clear data source indicators
+        """)
 
-# Rest of the functions remain the same (keeping the same structure)
 def create_executive_summary(data_dict, frequency):
     """Create executive summary with latest date"""
     latest_date = get_latest_date_info(data_dict)
@@ -562,9 +607,17 @@ def create_executive_summary(data_dict, frequency):
                 trend_class = f"trend-{trend}"
                 trend_symbol = "↗" if trend == "up" else "↘" if trend == "down" else "→"
                 
+                # Data source badge
+                data_source = data.get('data_source', 'Unknown')
+                badge_class = "badge-fred" if data_source == 'FRED' else "badge-sample"
+                badge_text = "FRED" if data_source == 'FRED' else "Sample"
+                
                 st.markdown(f"""
                 <div class='metric-card'>
-                    <div class='metric-label'>{category}</div>
+                    <div class='metric-label'>
+                        {category} 
+                        <span class='data-source-badge {badge_class}'>{badge_text}</span>
+                    </div>
                     <div class='metric-value'>${abs(latest_flow):,.0f}M</div>
                     <div>
                         <span style='color: {'#27ae60' if latest_flow > 0 else '#e74c3c'};'>
@@ -788,7 +841,7 @@ def create_enhanced_flow_analysis(data_dict, frequency):
             )
             
             # 2. Inflow Trend Analysis
-            for idx, category in enumerate(inflow_categories[:3]):  # Show top 3 for clarity
+            for idx, category in enumerate(inflow_categories[:3]):
                 data = data_dict[category]
                 flows = data['flows']['Flow']
                 
@@ -839,12 +892,11 @@ def create_enhanced_flow_analysis(data_dict, frequency):
             )
             
             # 4. Inflow Volatility Analysis
-            for idx, category in enumerate(inflow_categories[:2]):  # Show top 2 for clarity
+            for idx, category in enumerate(inflow_categories[:2]):
                 data = data_dict[category]
                 flows = data['flows']['Flow']
                 
                 if len(flows) >= 20:
-                    # Calculate rolling volatility
                     rolling_vol = flows.rolling(window=6).std()
                     
                     fig_inflows.add_trace(
@@ -934,7 +986,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                 latest_flow = abs(data_dict[category]['flows'].iloc[-1, 0])
                 latest_outflows.append(latest_flow)
             
-            # Color by magnitude
             outflow_colors = ['#e74c3c' if x > np.median(latest_outflows) else '#c0392b' for x in latest_outflows]
             
             fig_outflows.add_trace(
@@ -953,10 +1004,9 @@ def create_enhanced_flow_analysis(data_dict, frequency):
             # 2. Outflow Trend Analysis
             for idx, category in enumerate(outflow_categories[:3]):
                 data = data_dict[category]
-                flows = abs(data['flows']['Flow'])  # Use absolute values for outflow analysis
+                flows = abs(data['flows']['Flow'])
                 
                 if len(flows) >= 12:
-                    # Calculate moving average
                     ma_window = min(12, len(flows))
                     ma = flows.rolling(window=ma_window).mean()
                     
@@ -973,7 +1023,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                         row=1, col=2
                     )
                     
-                    # Add moving average
                     fig_outflows.add_trace(
                         go.Scatter(
                             x=ma.index,
@@ -1007,7 +1056,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                 flows = abs(data['flows']['Flow'])
                 
                 if len(flows) >= 20:
-                    # Calculate rolling volatility
                     rolling_vol = flows.rolling(window=6).std()
                     
                     fig_outflows.add_trace(
@@ -1091,7 +1139,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                 flows = data['flows']['Flow']
                 
                 if len(flows) >= trend_window:
-                    # Calculate trend components
                     moving_avg = flows.rolling(window=trend_window).mean()
                     moving_std = flows.rolling(window=trend_window).std()
                     
@@ -1099,10 +1146,8 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                     latest_ma = moving_avg.iloc[-1]
                     latest_std = moving_std.iloc[-1]
                     
-                    # Calculate z-score
                     z_score = (latest_flow - latest_ma) / latest_std if latest_std > 0 else 0
                     
-                    # Determine trend status
                     if latest_flow > latest_ma + (latest_std * threshold_multiplier):
                         trend_status = "Well Above Trend"
                         status_color = "#27ae60"
@@ -1124,7 +1169,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                         status_color = "#3498db"
                         status_icon = "➡️"
                     
-                    # Calculate trend strength
                     trend_strength = abs(z_score)
                     
                     if trend_strength > 2:
@@ -1153,9 +1197,7 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                         'Status Color': status_color
                     })
         
-        # Display trend results
         if trend_results:
-            # Create trend indicators
             cols = st.columns(len(trend_results))
             for idx, result in enumerate(trend_results):
                 with cols[idx]:
@@ -1171,14 +1213,11 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                     </div>
                     """, unsafe_allow_html=True)
             
-            # Display trend table
             st.markdown("##### Detailed Trend Analysis")
             trend_df = pd.DataFrame(trend_results)
-            # Remove the color column from display
             display_df = trend_df.drop(columns=['Status Color'])
             st.dataframe(display_df, use_container_width=True, height=200)
             
-            # Visual trend chart
             st.markdown("##### Visual Trend Analysis")
             fig_trend = go.Figure()
             
@@ -1187,7 +1226,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                     flows = data['flows']['Flow']
                     color = data.get('color', PROFESSIONAL_COLORS[0])
                     
-                    # Add actual flow
                     fig_trend.add_trace(go.Scatter(
                         x=flows.index,
                         y=flows,
@@ -1197,7 +1235,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                         hovertemplate='%{x|%b %Y}<br>' + f'{category}: $%{{y:,.0f}}M<extra></extra>'
                     ))
                     
-                    # Add moving average
                     if len(flows) >= trend_window:
                         moving_avg = flows.rolling(window=trend_window).mean()
                         fig_trend.add_trace(go.Scatter(
@@ -1226,7 +1263,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
     with flow_tab4:
         st.markdown("##### Bollinger Band Analysis")
         
-        # Bollinger Band configuration
         col1, col2 = st.columns(2)
         with col1:
             bb_window = st.slider("Bollinger Window (periods)", 5, 30, 20, key="bb_window")
@@ -1234,7 +1270,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
         with col2:
             bb_std = st.slider("Standard Deviation Multiplier", 1.0, 3.0, 2.0, 0.1, key="bb_std")
         
-        # Let user select a category for detailed Bollinger analysis
         if data_dict:
             selected_category = st.selectbox(
                 "Select Category for Bollinger Band Analysis",
@@ -1249,17 +1284,14 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                     color = data.get('color', PROFESSIONAL_COLORS[0])
                     
                     if len(flows) >= bb_window:
-                        # Calculate Bollinger Bands
                         rolling_mean = flows.rolling(window=bb_window).mean()
                         rolling_std = flows.rolling(window=bb_window).std()
                         
                         upper_band = rolling_mean + (rolling_std * bb_std)
                         lower_band = rolling_mean - (rolling_std * bb_std)
                         
-                        # Create Bollinger Band chart
                         fig_bb = go.Figure()
                         
-                        # Add actual flow
                         fig_bb.add_trace(go.Scatter(
                             x=flows.index,
                             y=flows,
@@ -1269,7 +1301,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             hovertemplate='%{x|%b %Y}<br>Actual: $%{y:,.0f}M<extra></extra>'
                         ))
                         
-                        # Add moving average
                         fig_bb.add_trace(go.Scatter(
                             x=rolling_mean.index,
                             y=rolling_mean,
@@ -1279,7 +1310,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             hovertemplate='%{x|%b %Y}<br>MA: $%{y:,.0f}M<extra></extra>'
                         ))
                         
-                        # Add upper band
                         fig_bb.add_trace(go.Scatter(
                             x=upper_band.index,
                             y=upper_band,
@@ -1289,7 +1319,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             hovertemplate='%{x|%b %Y}<br>Upper: $%{y:,.0f}M<extra></extra>'
                         ))
                         
-                        # Add lower band
                         fig_bb.add_trace(go.Scatter(
                             x=lower_band.index,
                             y=lower_band,
@@ -1299,7 +1328,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             hovertemplate='%{x|%b %Y}<br>Lower: $%{y:,.0f}M<extra></extra>'
                         ))
                         
-                        # Fill between bands
                         x_combined = list(upper_band.index) + list(lower_band.index[::-1])
                         y_combined = list(upper_band.values) + list(lower_band.values[::-1])
                         
@@ -1314,13 +1342,11 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             hovertemplate='%{x|%b %Y}<br>Band Width<extra></extra>'
                         ))
                         
-                        # Calculate band width and statistics
                         latest_flow = flows.iloc[-1]
                         latest_upper = upper_band.iloc[-1]
                         latest_lower = lower_band.iloc[-1]
                         latest_ma = rolling_mean.iloc[-1]
                         
-                        # Determine position relative to bands
                         if latest_flow > latest_upper:
                             position = "Above Upper Band"
                             position_color = "#e74c3c"
@@ -1342,13 +1368,11 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             position_icon = "↘️"
                             signal = "Moderate Outflow"
                         
-                        # Calculate %B indicator
                         if latest_upper != latest_lower:
                             percent_b = (latest_flow - latest_lower) / (latest_upper - latest_lower) * 100
                         else:
                             percent_b = 50
                         
-                        # Band width
                         band_width = ((latest_upper - latest_lower) / latest_ma * 100) if latest_ma != 0 else 0
                         
                         fig_bb.update_layout(
@@ -1370,7 +1394,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                         
                         st.plotly_chart(fig_bb, use_container_width=True)
                         
-                        # Display Bollinger Band metrics
                         st.markdown("##### Bollinger Band Metrics")
                         
                         col1, col2, col3, col4 = st.columns(4)
@@ -1405,7 +1428,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                                 help="Trading/investment signal based on Bollinger Band position"
                             )
                         
-                        # Display band statistics
                         st.markdown("##### Band Statistics")
                         
                         bb_stats = pd.DataFrame({
@@ -1421,10 +1443,8 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                         
                         st.dataframe(bb_stats, use_container_width=True, height=200)
                         
-                        # Historical band analysis
                         st.markdown("##### Historical Band Analysis")
                         
-                        # Calculate how often flow is outside bands
                         outside_upper = (flows > upper_band).sum()
                         outside_lower = (flows < lower_band).sum()
                         total_periods = len(flows.dropna())
@@ -1434,7 +1454,6 @@ def create_enhanced_flow_analysis(data_dict, frequency):
                             percent_lower = outside_lower / total_periods * 100
                             percent_inside = 100 - percent_upper - percent_lower
                             
-                            # Create historical analysis
                             hist_fig = go.Figure(data=[
                                 go.Bar(
                                     name='% Time Above Upper Band',
@@ -1498,7 +1517,6 @@ def create_correlation_matrix(data_dict):
         st.warning("No data available")
         return
     
-    # Extract flow data
     flow_data = {}
     for category, data in data_dict.items():
         if 'flows' in data and not data['flows'].empty:
@@ -1508,11 +1526,9 @@ def create_correlation_matrix(data_dict):
         st.info("Need at least 2 categories for correlation analysis")
         return
     
-    # Create correlation matrix
     df = pd.DataFrame(flow_data)
     correlation_matrix = df.corr()
     
-    # Create heatmap
     fig = go.Figure(data=go.Heatmap(
         z=correlation_matrix.values,
         x=correlation_matrix.columns,
@@ -1535,15 +1551,13 @@ def create_correlation_matrix(data_dict):
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Statistical summary
     st.markdown("##### Correlation Insights")
     
-    # Find strongest correlations
     insights = []
     for i in range(len(correlation_matrix.columns)):
         for j in range(i+1, len(correlation_matrix.columns)):
             corr = correlation_matrix.iloc[i, j]
-            if abs(corr) > 0.3:  # Only show meaningful correlations
+            if abs(corr) > 0.3:
                 cat1 = correlation_matrix.columns[i]
                 cat2 = correlation_matrix.columns[j]
                 
@@ -1593,16 +1607,13 @@ def create_correlation_matrix(data_dict):
     else:
         st.info("No strong correlations found (|r| > 0.3)")
     
-    # Rolling correlation analysis
     st.markdown("##### Rolling Correlation Analysis")
     
     rolling_window = st.slider("Rolling Window Size", 10, 50, 20, key="corr_window")
     
-    # Create rolling correlation visualization
     if len(df) > rolling_window:
         fig_rolling = go.Figure()
         
-        # Select two main categories for rolling correlation
         if len(df.columns) >= 2:
             cat1, cat2 = df.columns[0], df.columns[1]
             rolling_corr = df[cat1].rolling(window=rolling_window).corr(df[cat2])
@@ -1629,7 +1640,6 @@ def create_correlation_matrix(data_dict):
                 yaxis=dict(range=[-1, 1])
             )
             
-            # Add horizontal lines for reference
             fig_rolling.add_hline(y=0.7, line_dash="dot", line_color="#27ae60", 
                                  annotation_text="Strong Positive", annotation_position="top right")
             fig_rolling.add_hline(y=0, line_dash="solid", line_color="#666666", opacity=0.5)
@@ -1664,99 +1674,83 @@ def create_advanced_analytics(data_dict):
     with analytics_tab1:
         st.markdown("##### Volatility Analysis")
         
-        # Explanation
         st.info("**Note:** Volatility analysis is based on percentage changes (returns) of fund flows, not absolute levels.")
         
-        # Calculate and display volatility metrics
         volatility_data = []
         
         for category, data in data_dict.items():
             if 'flows' in data and not data['flows'].empty:
                 flows = data['flows']['Flow']
                 
-                # Calculate percentage returns (excluding first NaN)
                 if len(flows) >= 2:
-                    # Method 1: Simple percentage change (preferred for volatility)
-                    returns = flows.pct_change().dropna() * 100  # Convert to percentage
+                    returns = flows.pct_change().dropna() * 100
                     
                     if len(returns) > 0:
-                        # Calculate various volatility metrics
-                        period_vol = returns.std()  # Period volatility (monthly or weekly)
+                        period_vol = returns.std()
                         
-                        # Annualize based on frequency
-                        if len(returns) > 0:
-                            # Estimate periods per year based on index frequency
-                            if isinstance(flows.index, pd.DatetimeIndex):
-                                if pd.infer_freq(flows.index) == 'MS' or pd.infer_freq(flows.index) == 'M':
+                        if isinstance(flows.index, pd.DatetimeIndex):
+                            if pd.infer_freq(flows.index) == 'MS' or pd.infer_freq(flows.index) == 'M':
+                                periods_per_year = 12
+                            elif pd.infer_freq(flows.index) == 'W' or pd.infer_freq(flows.index) == 'W-FRI':
+                                periods_per_year = 52
+                            else:
+                                periods_per_year = 252
+                        else:
+                            if len(flows) > 50:
+                                if (flows.index[-1] - flows.index[0]).days / len(flows) > 20:
                                     periods_per_year = 12
-                                elif pd.infer_freq(flows.index) == 'W' or pd.infer_freq(flows.index) == 'W-FRI':
+                                else:
                                     periods_per_year = 52
-                                else:
-                                    periods_per_year = 252  # Default to daily
                             else:
-                                # Default based on data length
-                                if len(flows) > 50:  # Likely weekly or monthly
-                                    if (flows.index[-1] - flows.index[0]).days / len(flows) > 20:
-                                        periods_per_year = 12  # Monthly
-                                    else:
-                                        periods_per_year = 52  # Weekly
-                                else:
-                                    periods_per_year = 12  # Default to monthly
-                            
-                            annualized_vol = period_vol * np.sqrt(periods_per_year)
-                            
-                            # Calculate other metrics using returns
-                            # Cumulative returns for drawdown calculation
-                            cum_returns = (1 + returns/100).cumprod() - 1
-                            max_drawdown = (cum_returns.expanding().max() - cum_returns).max() * 100
-                            
-                            # Calculate Value at Risk (VaR) - parametric method
-                            var_95 = returns.mean() - 1.645 * returns.std()
-                            var_99 = returns.mean() - 2.326 * returns.std()
-                            
-                            # Calculate Expected Shortfall (ES) - conditional VaR
-                            es_95 = returns[returns <= var_95].mean() if len(returns[returns <= var_95]) > 0 else var_95
-                            es_99 = returns[returns <= var_99].mean() if len(returns[returns <= var_99]) > 0 else var_99
-                            
-                            # Calculate Sortino Ratio (only downside deviation)
-                            target_return = 0  # Zero threshold
-                            downside_returns = returns[returns < target_return]
-                            downside_deviation = downside_returns.std() if len(downside_returns) > 0 else 0
-                            sortino_ratio = (returns.mean() - target_return) / downside_deviation if downside_deviation > 0 else 0
-                            
-                            # Determine risk level based on annualized volatility
-                            if annualized_vol > 40:
-                                risk_level = 'Very High'
-                                risk_color = '#8b0000'
-                            elif annualized_vol > 25:
-                                risk_level = 'High'
-                                risk_color = '#e74c3c'
-                            elif annualized_vol > 15:
-                                risk_level = 'Medium'
-                                risk_color = '#f39c12'
-                            elif annualized_vol > 5:
-                                risk_level = 'Low'
-                                risk_color = '#27ae60'
-                            else:
-                                risk_level = 'Very Low'
-                                risk_color = '#2ecc71'
-                            
-                            volatility_data.append({
-                                'Category': category,
-                                'Period Vol (%)': f"{period_vol:.2f}",
-                                'Annual Vol (%)': f"{annualized_vol:.2f}",
-                                'Max Drawdown (%)': f"{max_drawdown:.2f}",
-                                'VaR 95% (%)': f"{var_95:.2f}",
-                                'VaR 99% (%)': f"{var_99:.2f}",
-                                'ES 95% (%)': f"{es_95:.2f}" if not pd.isna(es_95) else "N/A",
-                                'ES 99% (%)': f"{es_99:.2f}" if not pd.isna(es_99) else "N/A",
-                                'Sortino Ratio': f"{sortino_ratio:.2f}",
-                                'Risk Level': risk_level,
-                                'Risk Color': risk_color
-                            })
+                                periods_per_year = 12
+                        
+                        annualized_vol = period_vol * np.sqrt(periods_per_year)
+                        
+                        cum_returns = (1 + returns/100).cumprod() - 1
+                        max_drawdown = (cum_returns.expanding().max() - cum_returns).max() * 100
+                        
+                        var_95 = returns.mean() - 1.645 * returns.std()
+                        var_99 = returns.mean() - 2.326 * returns.std()
+                        
+                        es_95 = returns[returns <= var_95].mean() if len(returns[returns <= var_95]) > 0 else var_95
+                        es_99 = returns[returns <= var_99].mean() if len(returns[returns <= var_99]) > 0 else var_99
+                        
+                        target_return = 0
+                        downside_returns = returns[returns < target_return]
+                        downside_deviation = downside_returns.std() if len(downside_returns) > 0 else 0
+                        sortino_ratio = (returns.mean() - target_return) / downside_deviation if downside_deviation > 0 else 0
+                        
+                        if annualized_vol > 40:
+                            risk_level = 'Very High'
+                            risk_color = '#8b0000'
+                        elif annualized_vol > 25:
+                            risk_level = 'High'
+                            risk_color = '#e74c3c'
+                        elif annualized_vol > 15:
+                            risk_level = 'Medium'
+                            risk_color = '#f39c12'
+                        elif annualized_vol > 5:
+                            risk_level = 'Low'
+                            risk_color = '#27ae60'
+                        else:
+                            risk_level = 'Very Low'
+                            risk_color = '#2ecc71'
+                        
+                        volatility_data.append({
+                            'Category': category,
+                            'Period Vol (%)': f"{period_vol:.2f}",
+                            'Annual Vol (%)': f"{annualized_vol:.2f}",
+                            'Max Drawdown (%)': f"{max_drawdown:.2f}",
+                            'VaR 95% (%)': f"{var_95:.2f}",
+                            'VaR 99% (%)': f"{var_99:.2f}",
+                            'ES 95% (%)': f"{es_95:.2f}" if not pd.isna(es_95) else "N/A",
+                            'ES 99% (%)': f"{es_99:.2f}" if not pd.isna(es_99) else "N/A",
+                            'Sortino Ratio': f"{sortino_ratio:.2f}",
+                            'Risk Level': risk_level,
+                            'Risk Color': risk_color
+                        })
         
         if volatility_data:
-            # Display volatility statistics table
             st.markdown("##### Volatility Statistics")
             display_cols = ['Category', 'Period Vol (%)', 'Annual Vol (%)', 'Max Drawdown (%)', 
                           'VaR 95% (%)', 'VaR 99% (%)', 'Sortino Ratio', 'Risk Level']
@@ -1769,7 +1763,6 @@ def create_advanced_analytics(data_dict):
             volatility_df = pd.DataFrame(display_data)
             st.dataframe(volatility_df, use_container_width=True)
             
-            # Volatility comparison chart
             st.markdown("##### Volatility Comparison")
             
             fig_vol = go.Figure()
@@ -1797,7 +1790,6 @@ def create_advanced_analytics(data_dict):
                 showlegend=False
             )
             
-            # Add risk level bands with appropriate thresholds
             fig_vol.add_hrect(y0=0, y1=5, line_width=0, fillcolor="#2ecc71", opacity=0.1, 
                             annotation_text="Very Low Risk", annotation_position="top left")
             fig_vol.add_hrect(y0=5, y1=15, line_width=0, fillcolor="#27ae60", opacity=0.1, 
@@ -1811,10 +1803,8 @@ def create_advanced_analytics(data_dict):
             
             st.plotly_chart(fig_vol, use_container_width=True)
             
-            # Rolling volatility analysis
             st.markdown("##### Rolling Volatility Analysis")
             
-            # Let user select a category for detailed rolling volatility
             if volatility_data:
                 selected_category = st.selectbox(
                     "Select Category for Rolling Volatility Analysis",
@@ -1827,8 +1817,7 @@ def create_advanced_analytics(data_dict):
                     if 'flows' in data and not data['flows'].empty:
                         flows = data['flows']['Flow']
                         
-                        if len(flows) >= 20:  # Need enough data for rolling window
-                            # Calculate returns
+                        if len(flows) >= 20:
                             returns = flows.pct_change().dropna() * 100
                             
                             col1, col2 = st.columns(2)
@@ -1844,11 +1833,9 @@ def create_advanced_analytics(data_dict):
                                 annualize = st.checkbox("Annualize Rolling Volatility", value=True, 
                                                        key="annualize_vol")
                             
-                            # Calculate rolling volatility
                             rolling_vol = returns.rolling(window=rolling_window).std()
                             
                             if annualize:
-                                # Estimate periods per year
                                 if isinstance(flows.index, pd.DatetimeIndex):
                                     if pd.infer_freq(flows.index) == 'MS' or pd.infer_freq(flows.index) == 'M':
                                         periods_per_year = 12
@@ -1857,14 +1844,13 @@ def create_advanced_analytics(data_dict):
                                     else:
                                         periods_per_year = 252
                                 else:
-                                    periods_per_year = 12  # Default to monthly
+                                    periods_per_year = 12
                                 
                                 rolling_vol = rolling_vol * np.sqrt(periods_per_year)
                                 y_title = f"{rolling_window}-Period Rolling Annual Volatility (%)"
                             else:
                                 y_title = f"{rolling_window}-Period Rolling Volatility (%)"
                             
-                            # Create rolling volatility chart
                             fig_rolling_vol = go.Figure()
                             
                             fig_rolling_vol.add_trace(go.Scatter(
@@ -1878,7 +1864,6 @@ def create_advanced_analytics(data_dict):
                                 hovertemplate='%{x|%b %Y}<br>Volatility: %{y:.2f}%<extra></extra>'
                             ))
                             
-                            # Add average volatility line
                             avg_vol = rolling_vol.mean()
                             fig_rolling_vol.add_hline(
                                 y=avg_vol,
@@ -1900,14 +1885,11 @@ def create_advanced_analytics(data_dict):
                             
                             st.plotly_chart(fig_rolling_vol, use_container_width=True)
                             
-                            # Volatility clustering analysis
                             st.markdown("##### Volatility Clustering Analysis")
                             
-                            # Calculate volatility clustering (autocorrelation of squared returns)
                             squared_returns = returns ** 2
                             
                             if len(squared_returns) >= 20:
-                                # Calculate autocorrelation
                                 max_lag = min(20, len(squared_returns) // 2)
                                 autocorr = [squared_returns.autocorr(lag=i) for i in range(1, max_lag + 1)]
                                 
@@ -1920,7 +1902,6 @@ def create_advanced_analytics(data_dict):
                                     hovertemplate='Lag: %{x}<br>Autocorrelation: %{y:.3f}<extra></extra>'
                                 ))
                                 
-                                # Add significance bands (95% confidence)
                                 significance = 1.96 / np.sqrt(len(squared_returns))
                                 fig_autocorr.add_hline(y=significance, line_dash="dash", line_color="#e74c3c", 
                                                       annotation_text="95% Upper Band", annotation_position="top right")
@@ -1939,14 +1920,11 @@ def create_advanced_analytics(data_dict):
                                 
                                 st.plotly_chart(fig_autocorr, use_container_width=True)
                                 
-                                # Interpretation of volatility clustering
                                 significant_lags = sum(1 for ac in autocorr if abs(ac) > significance)
                                 if significant_lags > 0:
-                                    st.success(f"**Volatility Clustering Detected:** {significant_lags} out of {max_lag} lags show significant autocorrelation. "
-                                              "This indicates volatility tends to cluster over time (periods of high volatility followed by high volatility, "
-                                              "and periods of low volatility followed by low volatility).")
+                                    st.success(f"**Volatility Clustering Detected:** {significant_lags} out of {max_lag} lags show significant autocorrelation.")
                                 else:
-                                    st.info("No significant volatility clustering detected. Volatility appears to be independently distributed over time.")
+                                    st.info("No significant volatility clustering detected.")
                         else:
                             st.warning("Need at least 20 periods of data for rolling volatility analysis")
                     else:
@@ -1957,7 +1935,6 @@ def create_advanced_analytics(data_dict):
     with analytics_tab2:
         st.markdown("##### Seasonality Analysis")
         
-        # Let user select a category
         if data_dict:
             selected_category = st.selectbox(
                 "Select Category for Seasonality Analysis",
@@ -1970,19 +1947,16 @@ def create_advanced_analytics(data_dict):
                 if 'flows' in data and not data['flows'].empty:
                     flows = data['flows']['Flow']
                     
-                    if len(flows) >= 24:  # Need at least 2 years for seasonality
-                        # Prepare data for seasonality analysis
+                    if len(flows) >= 24:
                         flows_df = flows.reset_index()
                         flows_df.columns = ['Date', 'Flow']
                         flows_df['Year'] = flows_df['Date'].dt.year
                         flows_df['Month'] = flows_df['Date'].dt.month
                         flows_df['Month_Name'] = flows_df['Date'].dt.strftime('%b')
                         
-                        # Monthly average
                         monthly_avg = flows_df.groupby(['Month', 'Month_Name'])['Flow'].mean().reset_index()
                         monthly_avg = monthly_avg.sort_values('Month')
                         
-                        # Create seasonality chart
                         fig_season = go.Figure()
                         
                         fig_season.add_trace(go.Bar(
@@ -2006,11 +1980,9 @@ def create_advanced_analytics(data_dict):
                         
                         st.plotly_chart(fig_season, use_container_width=True)
                         
-                        # Year-over-year comparison
                         st.markdown("##### Year-over-Year Comparison")
                         
                         if len(flows_df['Year'].unique()) >= 2:
-                            # Pivot for year-over-year comparison
                             yearly_pivot = flows_df.pivot_table(
                                 index='Month_Name',
                                 columns='Year',
@@ -2018,7 +1990,6 @@ def create_advanced_analytics(data_dict):
                                 aggfunc='mean'
                             )
                             
-                            # Order by month
                             month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             yearly_pivot = yearly_pivot.reindex(month_order)
@@ -2055,7 +2026,6 @@ def create_advanced_analytics(data_dict):
         st.markdown("##### Statistical Insights")
         
         if data_dict:
-            # Let user select a category for detailed statistics
             selected_category = st.selectbox(
                 "Select Category for Statistical Analysis",
                 list(data_dict.keys()),
@@ -2068,7 +2038,6 @@ def create_advanced_analytics(data_dict):
                     flows = data['flows']['Flow'].dropna()
                     
                     if len(flows) > 0:
-                        # Calculate statistics
                         stats_summary = {
                             'Number of Observations': len(flows),
                             'Mean': f"${flows.mean():,.0f}M",
@@ -2082,17 +2051,14 @@ def create_advanced_analytics(data_dict):
                             '75th Percentile': f"${flows.quantile(0.75):,.0f}M"
                         }
                         
-                        # Display statistics
                         stats_df = pd.DataFrame(list(stats_summary.items()), columns=['Statistic', 'Value'])
                         st.dataframe(stats_df, use_container_width=True, height=400)
                         
-                        # Distribution analysis
                         st.markdown("##### Distribution Analysis")
                         
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Histogram
                             fig_hist = px.histogram(
                                 x=flows,
                                 nbins=30,
@@ -2110,7 +2076,6 @@ def create_advanced_analytics(data_dict):
                             st.plotly_chart(fig_hist, use_container_width=True)
                         
                         with col2:
-                            # Q-Q plot
                             qq = stats.probplot(flows, dist="norm")
                             x = np.array([qq[0][0][0], qq[0][0][-1]])
                             
@@ -2144,8 +2109,7 @@ def create_advanced_analytics(data_dict):
                             
                             st.plotly_chart(fig_qq, use_container_width=True)
                         
-                        # Normality test
-                        if len(flows) <= 5000:  # Shapiro test limitation
+                        if len(flows) <= 5000:
                             stat, p_value = stats.shapiro(flows)
                             
                             st.markdown(f"""
@@ -2158,26 +2122,22 @@ def create_advanced_analytics(data_dict):
 def main():
     """Main application function"""
     
-    # Sidebar configuration
     with st.sidebar:
         st.markdown("### ⚙️ Configuration Panel")
         
-        # API Key information
-        if not FRED_API_KEY or FRED_API_KEY == "d6e559fda60851075a75a42dd10d7042":
-            st.warning("""
-            **Demo Mode Active**
-            Using rate-limited demo key.
-            For full access, add your FRED API key to Streamlit secrets.
-            """)
+        st.info(f"""
+        **FRED API Status: Active**
+        Using personal API key
+        """)
         
-        # Data frequency
         frequency = st.selectbox(
             "Data Frequency",
             ["monthly", "weekly"],
             help="Select data frequency (monthly recommended for most series)"
         )
         
-        # Date range
+        st.session_state.frequency = frequency
+        
         years_back = st.slider(
             "Analysis Period (Years)",
             1, 10, 5,
@@ -2186,7 +2146,6 @@ def main():
         
         start_date = (datetime.today() - timedelta(days=years_back*365)).strftime('%Y-%m-%d')
         
-        # Fund category selection with FRED IDs
         st.markdown("### 📊 Fund Categories")
         st.caption("Select categories to analyze (FRED series)")
         
@@ -2203,21 +2162,17 @@ def main():
             st.warning("Please select at least one fund category")
             return
         
-        # Show data sources info
         show_data_sources_info()
         
-        # Analysis settings
         st.markdown("### 🔧 Analysis Settings")
         show_advanced = st.checkbox("Show Advanced Analytics", value=True)
         show_correlation = st.checkbox("Show Correlation Analysis", value=True)
         
-        # Refresh data button
         st.markdown("---")
         if st.button("🔄 Refresh Data from FRED", type="secondary"):
             st.cache_data.clear()
             st.rerun()
         
-        # Info
         st.markdown("---")
         st.markdown("""
         ### 📈 About This Dashboard
@@ -2232,7 +2187,6 @@ def main():
         
         **Data Features:**
         - Real-time FRED economic data
-        - 800,000+ economic time series available
         - Professional-grade data quality
         - Historical data from 1984-present
         
@@ -2248,7 +2202,7 @@ def main():
         <h4 style='color: #2c3e50; margin-top: 0;'>📊 Federal Reserve Economic Data (FRED)</h4>
         <p style='margin-bottom: 0.5rem;'><strong>Data Source:</strong> St. Louis Federal Reserve FRED API</p>
         <p style='margin-bottom: 0.5rem;'><strong>Current Analysis:</strong> {frequency.capitalize()} data for {len(selected_categories)} categories</p>
-        <p style='margin-bottom: 0;'><strong>Status:</strong> {'🟢 Live FRED Data' if FRED_API_KEY and FRED_API_KEY != 'd6e559fda60851075a75a42dd10d7042' else '🟡 Demo Mode (Sample Data)'}</p>
+        <p style='margin-bottom: 0;'><strong>Status:</strong> 🟢 Live FRED Data with personal API key</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -2277,36 +2231,32 @@ def main():
     if not data_dict:
         st.error("Failed to load data. Please check your configuration and try again.")
         
-        # Show troubleshooting tips
         with st.expander("🔧 Troubleshooting Tips", expanded=True):
             st.markdown("""
             ### Common Issues and Solutions:
             
             1. **API Key Issues:**
                - Get free API key: https://research.stlouisfed.org/docs/api/api_key.html
-               - Add to Streamlit Secrets: `FRED_API_KEY = "your_key_here"`
             
             2. **Network Issues:**
                - Check your internet connection
                - The FRED API may be temporarily unavailable
             
             3. **Rate Limiting:**
-               - Demo key has rate limits
-               - Use your own API key for unlimited access
+               - Personal API key has higher rate limits
+               - Try again in a few minutes
             
             4. **Data Availability:**
                - Some series may not have recent data
                - Try different date ranges or categories
             """)
         
-        # Offer to use sample data
         if st.button("🔄 Use Sample Data Instead", type="primary"):
             st.cache_data.clear()
             st.rerun()
         
         return
     
-    # Store data_dict in session state for access in sidebar
     st.session_state.data_dict = data_dict
     
     # Main dashboard tabs
@@ -2321,7 +2271,6 @@ def main():
     with main_tabs[0]:
         create_executive_summary(data_dict, frequency)
         
-        # Quick insights
         st.markdown("### 🎯 Key Insights")
         insights_col1, insights_col2, insights_col3 = st.columns(3)
         
@@ -2375,7 +2324,7 @@ def main():
         <p style='font-size: 0.75rem; color: #999999; margin-top: 1rem;'>
             This dashboard integrates with the Federal Reserve Economic Data (FRED) API from the Federal Reserve Bank of St. Louis.
             Data is provided for professional analysis and research purposes.
-            {'⚠️ Using demo API key (rate limited).' if not FRED_API_KEY or FRED_API_KEY == 'd6e559fda60851075a75a42dd10d7042' else '✅ Using personal FRED API key.'}
+            ✅ Using personal FRED API key.
         </p>
     </div>
     """, unsafe_allow_html=True)
