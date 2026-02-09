@@ -160,6 +160,22 @@ st.markdown("""
         margin-top: 3rem;
         border-top: 1px solid #e0e0e0;
     }
+    .z-score-high {
+        color: #e74c3c;
+        font-weight: 600;
+    }
+    .z-score-medium {
+        color: #f39c12;
+        font-weight: 600;
+    }
+    .z-score-low {
+        color: #27ae60;
+        font-weight: 600;
+    }
+    .z-score-neutral {
+        color: #666666;
+        font-weight: 500;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -370,7 +386,7 @@ def create_professional_growth_charts(data_dict):
     
     with col2:
         if analysis_type == "Rolling Returns":
-            window = st.slider("Rolling Window Size", 1, 24, 12)
+            window = st.slider("Rolling Window Size", 1, 24, 12, key="growth_window")
         else:
             window = 12
     
@@ -600,75 +616,156 @@ def create_statistical_analysis(data_dict, frequency):
                 # Calculate z-score
                 z_score = (latest_flow - period_avg) / period_std if period_std != 0 else 0
                 
-                # Determine significance
+                # Determine significance based on z-score
                 if abs(z_score) > 2:
-                    significance = "Highly Significant"
-                    sig_color = "#e74c3c"
+                    significance = "🔴 Highly Significant"
+                    sig_color = "z-score-high"
+                elif abs(z_score) > 1.5:
+                    significance = "🟠 Very Significant"
+                    sig_color = "z-score-high"
                 elif abs(z_score) > 1:
-                    significance = "Significant"
-                    sig_color = "#f39c12"
+                    significance = "🟡 Significant"
+                    sig_color = "z-score-medium"
+                elif abs(z_score) > 0.5:
+                    significance = "🟢 Moderately Significant"
+                    sig_color = "z-score-medium"
                 else:
-                    significance = "Normal"
-                    sig_color = "#27ae60"
+                    significance = "⚪ Normal"
+                    sig_color = "z-score-neutral"
                 
-                # Trend direction
-                if latest_flow > period_avg:
-                    direction = "Above Average"
-                    dir_color = "#27ae60"
+                # Trend direction with emojis
+                if latest_flow > period_avg * 1.1:  # 10% above average
+                    direction = "📈 Well Above Average"
+                elif latest_flow > period_avg:
+                    direction = "↗️ Above Average"
+                elif latest_flow < period_avg * 0.9:  # 10% below average
+                    direction = "📉 Well Below Average"
+                elif latest_flow < period_avg:
+                    direction = "↘️ Below Average"
                 else:
-                    direction = "Below Average"
-                    dir_color = "#e74c3c"
+                    direction = "➡️ At Average"
+                
+                # Format values for display
+                latest_display = f"${latest_flow:,.0f}M"
+                avg_display = f"${period_avg:,.0f}M"
+                diff_pct = ((latest_flow / period_avg - 1) * 100) if period_avg != 0 else 0
+                diff_display = f"{diff_pct:+.1f}%"
                 
                 trend_analysis_data.append({
                     'Category': category,
-                    f'Latest {frequency}': f"${latest_flow:,.0f}M",
-                    f'{periods}-Period Avg': f"${period_avg:,.0f}M",
-                    f'{periods}-Period Std': f"${period_std:,.0f}M",
-                    'Z-Score': f"{z_score:.2f}",
-                    'Significance': f"<span style='color:{sig_color}'>{significance}</span>",
-                    'Direction': f"<span style='color:{dir_color}'>{direction}</span>",
-                    'Difference %': f"{(latest_flow/period_avg - 1)*100:+.1f}%" if period_avg != 0 else "N/A"
+                    'Latest': latest_display,
+                    f'{periods}-Period Avg': avg_display,
+                    'Difference %': diff_display,
+                    'Z-Score': z_score,
+                    'Direction': direction,
+                    'Significance': significance,
+                    '_z_score': abs(z_score)  # For sorting
                 })
         
         if trend_analysis_data:
+            # Create DataFrame and sort by absolute z-score
             trend_df = pd.DataFrame(trend_analysis_data)
+            trend_df = trend_df.sort_values('_z_score', ascending=False)
+            trend_df = trend_df.drop(columns=['_z_score'])
             
-            # Display with styling
             st.markdown(f"**Comparison: Latest vs Last {periods} {frequency}**")
-            st.dataframe(trend_df, use_container_width=True, height=400)
             
-            # Visual summary
-            st.markdown("##### Visual Trend Summary")
+            # Display the table
+            column_config = {
+                'Category': st.column_config.TextColumn("Category", width="medium"),
+                'Latest': st.column_config.TextColumn(f"Latest {frequency}", width="small"),
+                f'{periods}-Period Avg': st.column_config.TextColumn(f"{periods}-Period Avg", width="small"),
+                'Difference %': st.column_config.TextColumn("Difference %", width="small"),
+                'Z-Score': st.column_config.NumberColumn("Z-Score", format="%.2f", width="small"),
+                'Direction': st.column_config.TextColumn("Direction", width="medium"),
+                'Significance': st.column_config.TextColumn("Significance", width="medium")
+            }
             
-            summary_fig = go.Figure()
-            
-            for idx, row in enumerate(trend_analysis_data):
-                category = row['Category']
-                z_score = float(row['Z-Score'].replace(',', ''))
-                
-                summary_fig.add_trace(go.Bar(
-                    x=[category],
-                    y=[z_score],
-                    name=category,
-                    marker_color=PROFESSIONAL_COLORS[idx % len(PROFESSIONAL_COLORS)],
-                    hovertemplate='%{x}<br>Z-Score: %{y:.2f}<extra></extra>'
-                ))
-            
-            summary_fig.add_hline(y=1, line_dash="dash", line_color="#f39c12", annotation_text="+1σ")
-            summary_fig.add_hline(y=-1, line_dash="dash", line_color="#f39c12", annotation_text="-1σ")
-            summary_fig.add_hline(y=2, line_dash="dash", line_color="#e74c3c", annotation_text="+2σ")
-            summary_fig.add_hline(y=-2, line_dash="dash", line_color="#e74c3c", annotation_text="-2σ")
-            summary_fig.add_hline(y=0, line_dash="solid", line_color="#666666")
-            
-            summary_fig.update_layout(
-                title=f"Standardized Deviations from {periods}-Period Average",
-                xaxis_title="Category",
-                yaxis_title="Z-Score",
+            st.dataframe(
+                trend_df,
+                column_config=column_config,
+                use_container_width=True,
                 height=400,
-                showlegend=False
+                hide_index=True
             )
             
-            st.plotly_chart(summary_fig, use_container_width=True)
+            # Visual summary chart
+            st.markdown("##### Visual Trend Summary")
+            
+            # Prepare data for chart
+            categories = [row['Category'] for row in trend_analysis_data]
+            z_scores = [row['Z-Score'] for row in trend_analysis_data]
+            
+            # Create color scale based on z-score
+            colors = []
+            for z in z_scores:
+                if z > 2:
+                    colors.append('#e74c3c')  # Red for highly positive
+                elif z > 1:
+                    colors.append('#f39c12')  # Orange for positive
+                elif z > 0:
+                    colors.append('#2ecc71')  # Light green for slightly positive
+                elif z < -2:
+                    colors.append('#8e44ad')  # Purple for highly negative
+                elif z < -1:
+                    colors.append('#3498db')  # Blue for negative
+                else:
+                    colors.append('#95a5a6')  # Gray for neutral
+            
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=categories,
+                y=z_scores,
+                marker_color=colors,
+                text=[f"{z:.2f}σ" for z in z_scores],
+                textposition='auto',
+                hovertemplate='%{x}<br>Z-Score: %{y:.2f}<extra></extra>'
+            ))
+            
+            # Add reference lines
+            fig.add_hline(y=2, line_dash="dash", line_color="#e74c3c", 
+                         annotation_text="+2σ", annotation_position="right")
+            fig.add_hline(y=1, line_dash="dash", line_color="#f39c12", 
+                         annotation_text="+1σ", annotation_position="right")
+            fig.add_hline(y=0, line_dash="solid", line_color="#666666", line_width=1)
+            fig.add_hline(y=-1, line_dash="dash", line_color="#3498db", 
+                         annotation_text="-1σ", annotation_position="right")
+            fig.add_hline(y=-2, line_dash="dash", line_color="#8e44ad", 
+                         annotation_text="-2σ", annotation_position="right")
+            
+            fig.update_layout(
+                title=f"Standardized Deviations from {periods}-Period Average",
+                xaxis_title="Category",
+                yaxis_title="Z-Score (Standard Deviations)",
+                height=400,
+                showlegend=False,
+                xaxis_tickangle=-45
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Summary statistics
+            st.markdown("##### Trend Analysis Summary")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            # Count different categories
+            above_avg = sum(1 for row in trend_analysis_data if row['Z-Score'] > 0)
+            below_avg = sum(1 for row in trend_analysis_data if row['Z-Score'] < 0)
+            significant = sum(1 for row in trend_analysis_data if abs(row['Z-Score']) > 1)
+            highly_significant = sum(1 for row in trend_analysis_data if abs(row['Z-Score']) > 2)
+            
+            with col1:
+                st.metric("Categories Above Avg", f"{above_avg}/{len(trend_analysis_data)}")
+            
+            with col2:
+                st.metric("Categories Below Avg", f"{below_avg}/{len(trend_analysis_data)}")
+            
+            with col3:
+                st.metric("Significant Deviations", f"{significant}/{len(trend_analysis_data)}")
+            
+            with col4:
+                st.metric("Highly Significant", f"{highly_significant}/{len(trend_analysis_data)}")
     
     with tab3:
         st.markdown("##### Risk Metrics")
@@ -796,7 +893,7 @@ def create_data_explorer(data_dict, frequency):
     # Show latest data first
     display_df = display_df.sort_values('Date', ascending=False)
     
-    rows_to_show = st.slider("Rows to display", 10, 100, 20)
+    rows_to_show = st.slider("Rows to display", 10, 100, 20, key="explorer_rows")
     st.dataframe(display_df.head(rows_to_show), use_container_width=True, height=300)
     
     # Summary statistics
@@ -904,7 +1001,8 @@ def create_data_explorer(data_dict, frequency):
                 data=csv_data,
                 file_name=f"{selected_category.replace(' ', '_')}_assets.csv",
                 mime="text/csv",
-                use_container_width=True
+                use_container_width=True,
+                key="export_assets"
             )
     
     with col2:
@@ -915,7 +1013,8 @@ def create_data_explorer(data_dict, frequency):
                 data=csv_flows,
                 file_name=f"{selected_category.replace(' ', '_')}_flows.csv",
                 mime="text/csv",
-                use_container_width=True
+                use_container_width=True,
+                key="export_flows"
             )
 
 def main():
@@ -929,7 +1028,8 @@ def main():
         frequency = st.radio(
             "Data Frequency",
             ['monthly', 'weekly'],
-            index=0
+            index=0,
+            key="frequency_select"
         )
         
         # Date range
@@ -937,7 +1037,8 @@ def main():
             "Start Date",
             value=datetime(2015, 1, 1),
             min_value=datetime(2000, 1, 1),
-            max_value=datetime.today()
+            max_value=datetime.today(),
+            key="start_date_select"
         )
         
         st.markdown("---")
@@ -949,12 +1050,13 @@ def main():
         selected_categories = st.multiselect(
             "Select categories to analyze",
             all_categories,
-            default=['Total Mutual Fund Assets', 'Equity Funds', 'Bond Funds', 'Money Market Funds']
+            default=['Total Mutual Fund Assets', 'Equity Funds', 'Bond Funds', 'Money Market Funds'],
+            key="category_select"
         )
         
         st.markdown("---")
         
-        if st.button("🔄 Refresh Application", use_container_width=True):
+        if st.button("🔄 Refresh Application", use_container_width=True, key="refresh_button"):
             st.cache_data.clear()
             st.rerun()
     
@@ -1001,7 +1103,7 @@ def main():
     # Footer
     st.markdown("""
     <div class="footer">
-        <p><strong>Institutional Fund Flow Analytics v4.0</strong></p>
+        <p><strong>Institutional Fund Flow Analytics v5.0</strong></p>
         <p>Professional Platform for Mutual Fund Flow Analysis | Latest Data: {latest_date}</p>
         <p>All figures in millions of USD | Institutional Use Only</p>
     </div>
