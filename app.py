@@ -1751,14 +1751,7 @@ def main():
     
     st.session_state.data_dict = data_dict
     
-    # Main dashboard tabs
-    main_tabs = st.tabs([
-        "📊 KPI Dashboard",
-        "📈 Growth Analysis",
-        "🔍 Quantitative
-    # ... [Previous code continues up to the main tabs] ...
-
-        # Quantitative Analysis Tab
+            # Quantitative Analysis Tab
         main_tabs = st.tabs([
             "📊 KPI Dashboard",
             "📈 Growth Analysis",
