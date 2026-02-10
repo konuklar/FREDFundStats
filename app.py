@@ -1752,7 +1752,7 @@ def main():
     st.session_state.data_dict = data_dict
     
             # Quantitative Analysis Tab
-        main_tabs = st.tabs([
+            main_tabs = st.tabs([
             "📊 KPI Dashboard",
             "📈 Growth Analysis",
             "🔍 Quantitative Analysis",
